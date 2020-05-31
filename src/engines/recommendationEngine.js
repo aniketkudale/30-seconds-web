@@ -1,105 +1,70 @@
-/* eslint-disable brace-style */
-import config from '../../config';
-const { recomendationEngine } = config;
-import { mapNumRange, similarity } from 'functions/utils';
-import { determineLanguageFromTags, stripLanguageFromTags } from 'functions/transformers';
+import { determineLanguageFromTags, stripLanguageFromTags } from 'build/transformers';
+import recommendationEngine from 'config/recommendationEngine';
 
-const determineRecommendedSnippetsWithoutContext = snippetNodes => {
-  const freshnessSortedNodes = Object.entries(snippetNodes)
-    .filter(v => !v[1].archived)
-    .sort((a, b) => +b[1].meta.lastUpdated - a[1].meta.lastUpdated);
+// Get data from configuration
+const {
+  recommendationCount,
+  languageScoreLimit,
+  primaryTagScoreLimit,
+  searchTokenScoreLimit,
+} = recommendationEngine;
+const totalScoreLimit = languageScoreLimit + primaryTagScoreLimit + searchTokenScoreLimit;
 
-  const freshNodes = freshnessSortedNodes.slice(0, Math.ceil(0.1 * freshnessSortedNodes.length));
-  const freshnessMaxValue = Math.max(...freshNodes.map(v => +v[1].meta.lastUpdated));
-  const freshnessMaxDifference = freshnessMaxValue - Math.min(...freshNodes.map(v => +v[1].meta.lastUpdated));
+/**
+ * Given a snippet context and the snippet nodes, recommend relevent snippets.
+ * @param {object} snippetNodes - The snippet nodes to use for recommendations.
+ * @param {object} snippetContext - The snippet for which to recommend.
+ */
+const determineRecommendedSnippets = (snippetNodes, snippetContext) => {
+  // Determine relevant attributes for the snippet
+  const language = (snippetContext.node.blog
+    ? determineLanguageFromTags(snippetContext.node.tags.all).long
+    : snippetContext.node.language.long).toLowerCase();
+  const primaryTag = (snippetContext.node.blog
+    ? stripLanguageFromTags(snippetContext.node.tags.all)[0]
+    : snippetContext.node.tags.primary).toLowerCase();
+  const searchTokens = snippetContext.node.searchTokens.split(' ');
 
-  return freshNodes.map(node => {
-    const freshnessValue = mapNumRange(freshnessMaxValue - node[1].meta.lastUpdated, freshnessMaxDifference, 0, 0.0, recomendationEngine.noContextFreshnessMultiplier).toFixed(4);
-    const indexableContent = [
-      node[1].title,
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.src || '',
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.es6 || '',
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.css || '',
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.html || '',
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.js || '',
-      node[1].attributes.codeBlocks && node[1].attributes.codeBlocks.style || '',
-      node[1].attributes.text,
-    ].join(' ');
+  return snippetNodes
+    .map(v => {
+      // Filter out any nodes with the same id (this very snippet)
+      if(v.node.id === snippetContext.node.id)
+        v.node.recommendationRanking = 0;
+      else {
+        // Determine score for language:
+        //  * Same language, as language = 100% of language score
+        //  * Same language, but as a tag = 25% of language score
+        //  * Not same language = 0% of language score
+        const languageScore = (
+          v.node.language && v.node.language.long === language ? 1
+            : v.node.tags.all.find(t => t.toLowerCase() === language) ? 0.25
+              : 0
+        ) * languageScoreLimit;
+        // Determine primary tag score:
+        //  * Same primary tag = 100% of tag score
+        //  * Contains primary tag, but not primary = 50% of tag score
+        //  * Doesn't contain tag = 0% of language score
+        const primaryTagScore = (
+          v.node.tags.primary.toLowerCase() === primaryTag ? 1
+            : v.node.tags.all.find(t => t.toLowerCase() === primaryTag) ? 0.5
+              : 0
+        ) * primaryTagScoreLimit;
+        // Determine search token score
+        const searchTokenScore = searchTokens.reduce(
+          (a, t) => a = v.node.searchTokens.indexOf(t) !== -1 ? a + 1 / searchTokens.length : a, 0
+        ) * searchTokenScoreLimit;
 
-    const keywordMaxValue = Object.values(node[1].keywordScores || []).reduce((acc, v) => acc + v, 0);
-    let keywordValue = 0;
-
-    Object.keys(node[1].keywordScores || []).forEach(k => {
-      if (indexableContent.indexOf(k) !== -1) keywordValue += node[1].keywordScores[k];
-    });
-
-    keywordValue = mapNumRange(keywordValue, 0, keywordMaxValue, 0.0, recomendationEngine.noContextKeywordMultiplier).toFixed(4);
-    keywordValue = isNaN(keywordValue) ? 0 : keywordValue;
-
-    return {
-      recommendationRanking: +freshnessValue + +keywordValue,
-      snippetKey: node[0],
-    };
-  }).sort((a, b) => b.recommendationRanking - a.recommendationRanking );
-};
-
-const determineRecommendedSnippetsWithContext = (snippetNodes, snippetContext) => {
-  const _snippetContext = {
-    language: snippetContext.node.blog
-      ? determineLanguageFromTags(snippetContext.node.tags.all)
-      : snippetContext.node.language,
-    primaryTag: snippetContext.node.blog
-      ? stripLanguageFromTags(snippetContext.node.tags.all)[0]
-      : snippetContext.node.tags.primary,
-  };
-
-  let relatedSnippets = snippetNodes
-    .filter(v =>
-      (
-        v.node.blog &&
-        v.node.tags.all.find(t => t.toLowerCase() === _snippetContext.language.long.toLowerCase()) &&
-        v.node.tags.all.find(t => t.toLowerCase() === _snippetContext.primaryTag.toLowerCase())
-      ) || (
-        v.node.language &&
-        v.node.language.short === _snippetContext.language.short &&
-        v.node.tags.primary === _snippetContext.primaryTag
-      )
-    );
-  // Handle snippets with very few recommendations (use language)
-  if(relatedSnippets.length < 3) {
-    relatedSnippets.push(
-      ...snippetNodes
-        .filter(v =>
-          v.node.language &&
-          v.node.language.long.toLowerCase() === _snippetContext.language.long.toLowerCase()
-        )
-        .sort((a, b) => b.ranking - a.ranking)
-        .slice(0, 3 - relatedSnippets.length + 1)
-    );
-  }
-  // Handle snippets with extremely few recommendations (use ranking)
-  if (relatedSnippets.length < 3) {
-    relatedSnippets.push(
-      ...snippetNodes
-        .sort((a, b) => b.ranking - a.ranking)
-        .slice(0, 3 - relatedSnippets.length + 1)
-    );
-  }
-
-  relatedSnippets
-    .forEach(snippet =>
-      snippet.similarity = similarity(snippet.node.tags.all, snippetContext.node.tags.all).length
-    );
-
-  return [...new Set(relatedSnippets.sort((a, b) =>
-    b.similarity - a.similarity || b.ranking - a.ranking
-  ))].filter(v => v.node.url !== snippetContext.node.url);
-};
-
-const determineRecommendedSnippets = (data, context) => {
-  if(typeof context !== 'undefined')
-    return determineRecommendedSnippetsWithContext(data, context);
-  return determineRecommendedSnippetsWithoutContext(data);
+        // Divide by the limit to get a value between 0 and 1
+        v.node.recommendationRanking = ((languageScore + primaryTagScore + searchTokenScore) / totalScoreLimit).toFixed(2);
+      }
+      return v;
+    }).sort((a, b) => {
+      // Rank by recommendationRanking as long as possible, otherwise by ranking
+      if (a.node.recommendationRanking === b.node.recommendationRanking)
+        return b.node.ranking - a.node.ranking;
+      return +b.node.recommendationRanking - +a.node.recommendationRanking;
+    })
+    .slice(0, recommendationCount);
 };
 
 export default determineRecommendedSnippets;

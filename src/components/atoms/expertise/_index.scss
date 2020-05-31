@@ -1,0 +1,35 @@
+// Colors
+:root {
+  --expertise-beginner: #7CB342;
+  --expertise-intermediate: #FFB300;
+  --expertise-advanced: #D66361;
+  --expertise-blog: #448AFF;
+}
+
+.expertise {
+  position: absolute;
+  width: 1rem;
+  height: 1rem;
+  border-radius: 1rem;
+  background: var(--expertise-color);
+  border: 2px solid var(--card-back-color);
+  box-sizing: border-box;
+  top: -4px;
+  right: -4px;
+
+  &.beginner {
+    --expertise-color: var(--expertise-beginner);
+  }
+
+  &.intermediate {
+    --expertise-color: var(--expertise-intermediate);
+  }
+
+  &.advanced {
+    --expertise-color: var(--expertise-advanced);
+  }
+
+  &.blog {
+    --expertise-color: var(--expertise-blog);
+  }
+}

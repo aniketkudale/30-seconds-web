@@ -1,21 +1,10 @@
-import Link from './link';
-import Snippet from './snippet';
-import Language from './language';
-import Meta from './meta';
-import Tags from './tags';
-import Code from './code';
-import Html from './html';
-import Paginator from './paginator';
-import Authors from './authors';
+import fs from 'fs-extra';
+import path from 'path';
 
-export {
-  Link,
-  Snippet,
-  Language,
-  Meta,
-  Tags,
-  Code,
-  Html,
-  Authors,
-  Paginator
-};
+/**
+ * Dynamically load the schema from the schema.graphql file.
+ * Export it as a string for use in sourceNodes lifecycle hook.
+ */
+const schema = fs.readFileSync(path.resolve(__dirname, 'schema.graphql'));
+
+export default schema;

@@ -1,0 +1,45 @@
+// Homepage title
+.home-title {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  color: var(--fore-color-dark);
+  margin: 0.5rem 1rem 0.5rem;
+
+  // Homepage logo
+  .home-logo {
+    display: inline-block;
+    vertical-align: middle;
+    margin: 1rem 1.25rem 0.5rem 0;
+    max-width: 64px;
+  }
+
+  // Homepage title text
+  .home-title-text {
+    text-align: center;
+    display: inline-block;
+    font-size: 1.5rem;
+    height: 24px;
+
+    @media screen and (min-width: 390px) {
+      font-size: 1.75rem;
+      height: 28px;
+    }
+  }
+
+  & ~ .listing-anchors-title {
+    margin: 3.5rem 1.25rem 0.875rem;
+  }
+}
+
+// Homepage subtitle
+.home-sub-title {
+  margin: 0.75rem 1.25rem 1.5rem;
+  color: var(--fore-color);
+  text-align: center;
+}
+
+// Fix for static pages
+:not(.listing-anchors) + .page-title, .page-title:first-child {
+  margin-top: 1rem;
+}
